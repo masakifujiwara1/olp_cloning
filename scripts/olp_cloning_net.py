@@ -32,33 +32,37 @@ class Net(nn.Module):
     def __init__(self, n_channel, n_out):
         super().__init__()
     # Network CNN 3 + FC 2 + fc2
-       # nn. is with parameters to be adjusted
-        self.conv1 = nn.Conv2d(n_channel, 32, kernel_size=8, stride=4)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2)
-        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1)
-        self.fc4 = nn.Linear(960, 512)
-        self.fc5 = nn.Linear(512, 256)
+        self.conv1 = nn.Conv1d(1, 64, kernel_size=7, stride=3)
+        self.bn1 = nn.BatchNorm1d(64)
+        self.conv2 = nn.Conv1d(64, 64, kernel_size=3, stride=1)
+        self.bn2 = nn.BatchNorm1d(64)
+        self.conv3 = nn.Conv1d(64, 64, kernel_size=3, stride=1)
+        self.bn3 = nn.BatchNorm1d(64)
 
-        # 4com
-        # self.fc6 = nn.Linear(260, 260)
-        # self.fc7 = nn.Linear(260, n_out)
+        self.conv4 = nn.Conv1d(64, 64, kernel_size=3, stride=1)
+        self.bn4 = nn.BatchNorm1d(64)
+        self.conv5 = nn.Conv1d(64, 64, kernel_size=3, stride=1)
+        self.bn5 = nn.BatchNorm1d(64)
 
-        # 3com
-        self.fc6 = nn.Linear(259, 259)
-        self.fc7 = nn.Linear(259, n_out)
+        self.avg_pool = nn.AvgPool1d(3)
+        self.max_pool = nn.MaxPool1d(3)
+
+        self.fc1 = nn.Linear(1024, 1024)
+        self.fc2 = nn.Linear(1024, 512)
+        self.fc3 = nn.Linear(512, 2)
 
         self.relu = nn.ReLU(inplace=True)
     # Weight set
         torch.nn.init.kaiming_normal_(self.conv1.weight)
         torch.nn.init.kaiming_normal_(self.conv2.weight)
         torch.nn.init.kaiming_normal_(self.conv3.weight)
+        torch.nn.init.kaiming_normal_(self.conv4.weight)
+        torch.nn.init.kaiming_normal_(self.conv5.weight)
         torch.nn.init.kaiming_normal_(self.fc4.weight)
         torch.nn.init.kaiming_normal_(self.fc5.weight)
         torch.nn.init.kaiming_normal_(self.fc6.weight)
         torch.nn.init.kaiming_normal_(self.fc7.weight)
-        #self.fc7.weight = nn.Parameter(torch.zeros(n_channel,260))
-        #self.maxpool = nn.MaxPool2d(2,2)
-        #self.batch = nn.BatchNorm2d(0.2)
+        
         self.flatten = nn.Flatten()
     # CNN layer
         self.cnn_layer = nn.Sequential(
