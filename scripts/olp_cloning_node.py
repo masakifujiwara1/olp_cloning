@@ -322,14 +322,23 @@ class Train_env:
         self.target_pos_pub = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=10)
         self.scan_sub = rospy.Subscriber('/scan', LaserScan, self.scan_callback)
         self.initial_pos = rospy.Publisher('/initialpose', PoseWithCovarianceStamped, queue_size=10)
+        self.cmd_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
         self.result_sub = rospy.Subscriber('/move_base/result', MoveBaseActionResult, self.result_callback)
         
+        self.listener = tf.TransformListener()
 
         self.pos_candidate = []
         self.read_path = '/home/fmasa/catkin_ws/src/olp_cloning/config/set_pose.csv'
 
+        self.cmd_vel = Twist()
+        self.cmd_vel.linear.x = 0.0
+        self.cmd_vel.angular.z = 0.0
+
         self.ps_map = PoseStamped()
         self.ps_map.header.frame_id = 'map'
+
+        self.ps_estimate = PoseStamped()
+        self.ps_estimate.header.frame_id = 'map'
 
         self.init_pos = PoseWithCovarianceStamped()
         self.init_pos.header.frame_id = 'map'
@@ -345,6 +354,7 @@ class Train_env:
         # self.set_pos_and_ang()
 
     def loop(self):
+        self.tf_target2robot()
         if not self.wait_scan:
             return
         self.check_end()
@@ -360,12 +370,41 @@ class Train_env:
         self.scan.ranges = scan_ranges
         self.min_s = min(self.scan.ranges)
         self.wait_scan = True
+
+    def tf_target2robot(self):
+        try:
+            (trans, rot) = self.listener.lookupTransform('/odom', '/base_footprint', rospy.Time(0))
+        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+            return
+
+        ps_base = self.listener.transformPose('/odom', self.ps_map)
+
+        dx = ps_base.pose.position.x - trans[0]
+        dy = ps_base.pose.position.y - trans[1]
+        dist = math.sqrt(dx*dx + dy*dy)
+
+        angle = math.atan2(dy, dx)
+        quat = tf.transformations.quaternion_from_euler(0, 0, angle)
+        (_, _, yaw) = tf.transformations.euler_from_quaternion(quat)
+        angle_diff = yaw - tf.transformations.euler_from_quaternion(rot)[2]
+        robot_angle = tf.transformations.euler_from_quaternion(rot)[2]
+
+        # print('Distance: %.2f m' % dist)
+        # print('Angle: %.2f rad' % angle_diff)
+
+        # print(robot_angle)
+
+        self.target_l = [dist, angle_diff, robot_angle]
+        self.target_l = np.array(self.target_l)
+
+        return self.target_l
     
     def pose_estimate(self, state):
         # self.init_pos.pose.pose.position.x = x
         # self.init_pos.pose.pose.position.y = y
         # self.init_pos.pose.pose.orientation.z = theta
         self.init_pos.pose.pose = state
+        self.init_pos.pose.covariance = [0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.06853892326654787]
         self.initial_pos.publish(self.init_pos)
 
     def check_end(self):
@@ -378,7 +417,11 @@ class Train_env:
         if flag:
             self.is_goal_reached = False
             rg.set_pos_and_ang()
+            # time.sleep(1)
             rg.set_target_pos()
+
+
+            self.clear_costmap()
             # set sequence~~~~~
 
     def set_target_pos(self):
@@ -405,6 +448,7 @@ class Train_env:
         self.ps_map.pose.position.y = y
         self.ps_map.pose.orientation.w = 1.0
 
+        self.clear_costmap()
         self.target_pos_pub.publish(self.ps_map)
 
         # print(dist)        
@@ -453,18 +497,28 @@ class Train_env:
         random_index = random.randint(0, len(self.pos_candidate) - 1)
         x, y = self.pos_candidate[random_index]
 
-        state = model_state.pose
+        # state = model_state.pose
 
-        state.position.x = x
-        state.position.y = y
-        state.orientation.x = quaternion[0]   
-        state.orientation.y = quaternion[1]
-        state.orientation.z = quaternion[2]
-        state.orientation.w = quaternion[3]
+        self.ps_estimate.pose.position.x = x
+        self.ps_estimate.pose.position.y = y
+        self.ps_estimate.pose.orientation.x = quaternion[0]   
+        self.ps_estimate.pose.orientation.y = quaternion[1]
+        self.ps_estimate.pose.orientation.z = quaternion[2]
+        self.ps_estimate.pose.orientation.w = quaternion[3]
         model_state.model_name = MODEL_NAME
+
+        ps_base = self.listener.transformPose('/odom', self.ps_estimate)
+        model_state.pose = ps_base.pose
+        # print(ps_base)
+        print(model_state)
+
+        print(self.ps_estimate.pose)
+
         # model_state.pose = state
         self.set_pos(model_state)
-        self.pose_estimate(state)
+        self.cmd_pub.publish(self.cmd_vel)
+        time.sleep(0.2)
+        self.pose_estimate(self.ps_estimate.pose)
 
     def reset_and_set(self):
         self.reset_env()
