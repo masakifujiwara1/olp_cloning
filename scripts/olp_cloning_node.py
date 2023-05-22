@@ -26,9 +26,11 @@ roslib.load_manifest('olp_cloning')
 
 MODEL_NAME = 'turtlebot3_burger'
 
+EPISODE = 100
+
 # to do random target position 
-X = 1.5
-Y = 1.5
+# X = 1.5
+# Y = 1.5
 
 class olp_cloning_node:
     def __init__(self):
@@ -188,144 +190,33 @@ class olp_cloning_node:
         #check steps
         self.end_steps_flag = self.train.check_steps(target_l, self.min_s)
 
-class Trains:
-    def __init__(self, args, reward_args):
-        self.args = args
-        self.reward_args = reward_args
-        # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        device = 'cpu'
-        # print(device)
-        self.agent = ActorCriticModel(args=args, device=device)
-        self.memory = ReplayMemory(args['memory_size'])
-        self.action_pub = rospy.Publisher('cmd_vel', Twist, queue_size=10)
-        self.action_twist = Twist()
-
-        self.episode_reward_list = []
-        self.eval_reward_list = []
-
-        self.n_steps = 0
-        self.total_n_steps = 0
-        self.n_update = 0
-
-        self.episode_reward = 0
-        self.done = False
-        # self.init = True
-        self.action = [0.0, 0.0]
-        self.init = True
-        self.avg_reward = 0.
-        self.reward = 0
-        # self.state = 1 # robotに対する目標位置
-
-        self.old_action = [0., 0.]
-        self.old_state = 0
-        self.old_target_l = 0
-    
-    def while_func(self, state, target_l, min_s):
-        if self.args['start_steps'] > self.n_steps:
-            # action = env.action_space.sample()
-            self.action[0] = random.uniform(0.1, 0.5)
-            self.action[1] = random.uniform(-1.0, 1.0)
-        else:
-            self.action = self.agent.select_action(self.old_state)
-
-        # print(self.action)
-
-        if len(self.memory) > self.args['batch_size']:
-            self.agent.update_parameters(self.memory, self.args['batch_size'], self.n_update)
-            self.n_update += 1
-
-        # env update
-        # if self.action[0] < 0:
-        #     self.action[0] = 0
-        self.action_twist.linear.x = self.action[0]
-        self.action_twist.angular.z = self.action[1]
-        self.action_pub.publish(self.action_twist)
-
-        if not self.init:
-            # next_state, reward, done, _ = env.step(action)
-
-            self.reward = self.calc_reward(target_l, min_s, self.old_target_l)
-
-            self.n_steps += 1
-            self.total_n_steps += 1
-            self.episode_reward += self.reward
-
-            self.memory.push(state=self.old_state, action=self.old_action, reward=self.reward, next_state=state, mask=float(not self.done))
-
-        # state = next_state
-        self.old_state = state
-        self.old_action = self.action
-        self.old_target_l = target_l
-
-        self.init = False
-
-    def evaluate_func(self, state, target_l, min_s):
-        with torch.no_grad():
-            self.action = self.agent.select_action(state, evaluate=True)
-
-        self.action_twist.linear.x = self.action[0]
-        self.action_twist.angular.z = self.action[1]
-        self.action_pub.publish(self.action_twist)
-
-        if not self.init:
-            self.reawrd = self.calc_reward(target_l, min_s, self.old_target_l)
-            self.n_steps += 1
-            self.total_n_steps += 1
-            self.episode_reward += self.reawrd
-
-    def calc_reward(self, target_l, min_s, old_target_l):
-        # rt
-        if target_l[0] < self.reward_args['Cd']:
-            rt = self.reward_args['r_arrive']
-        elif min_s < self.reward_args['Co'] + 0.02:
-            rt = self.reward_args['r_collision']
-        else:
-            # rt = self.reward_args['Cr'] * (old_target_l[0] - target_l[0])
-            rt = self.reward_args['Cr'] * (old_target_l[0] - target_l[0])
-        
-        # rpt
-        if (old_target_l[0] - target_l[0]) == 0:
-            rpt = self.reward_args['r_position']
-        else:
-            # 0.1m/sで近づかないとペナルティ
-            # rpt =  - self.reward_args['Cr'] * (0.1 / 5)
-            # rpt =  - (0.1 / 5)
-            rpt = 0
-
-        # rwt
-        rwt = -1 * abs(target_l[1])
-
-        # self.reward = rt + self.reward_args['ramda_p'] * rpt + self.reward_args['ramda_w'] * rwt
-        self.reward = rt + self.reward_args['ramda_r'] * abs(old_target_l[1] - old_target_l[1])
-        # self.reward = rt
-        # self.reward = rt + self.action[0]
-
-        return self.reward
-
-    def check_steps(self, target_l, min_s):
-        flag = False
-        if self.args['end_step'] == self.n_steps:
-            flag = True
-        elif target_l[0] < self.reward_args['Cd']:
-            flag = True
-        elif min_s < self.reward_args['Co']:
-            flag = True
-        return flag
-
 class Train_env:
     def __init__(self):
         # rospy.wait_for_service('/gazebo/rest_world')
+        self.start_time = time.strftime("%Y%m%d_%H:%M:%S")
+        self.path = roslib.packages.get_pkg_dir('olp_cloning') + '/dataset/'
+        self.save_path = roslib.packages.get_pkg_dir('olp_cloning') + '/dataset/' + self.start_time + '/dataset_' + str(EPISODE)
+        self.save_scan_path = roslib.packages.get_pkg_dir('olp_cloning') + '/dataset/' + self.start_time + '/dataset_' + str(EPISODE) + '_scan'
+        os.makedirs(self.path + self.start_time)
+
         self.reset_world = rospy.ServiceProxy('/gazebo/reset_world', Empty)
         self.clear_costmap = rospy.ServiceProxy('/move_base/clear_costmaps', Empty)
         self.set_pos = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
         self.get_pos = rospy.ServiceProxy('/gazebo/get_model_state', GetModelState)
         self.target_pos_pub = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=10)
+        self.target_pos_sub = rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.target_callback)
         self.scan_sub = rospy.Subscriber('/scan', LaserScan, self.scan_callback)
         self.initial_pos = rospy.Publisher('/initialpose', PoseWithCovarianceStamped, queue_size=10)
         self.cmd_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
+        self.cmd_sub = rospy.Subscriber('/cmd_vel', Twist, self.cmd_vel_callback)
         self.result_sub = rospy.Subscriber('/move_base/result', MoveBaseActionResult, self.result_callback)
         
+        self.episode = 1
+        self.step = 1
+
         self.listener = tf.TransformListener()
+
+        self.collect_flag = True
 
         self.pos_candidate = []
         self.read_path = '/home/fmasa/catkin_ws/src/olp_cloning/config/set_pose.csv'
@@ -333,6 +224,8 @@ class Train_env:
         self.cmd_vel = Twist()
         self.cmd_vel.linear.x = 0.0
         self.cmd_vel.angular.z = 0.0
+
+        self.sub_cmd_vel = Twist()
 
         self.ps_map = PoseStamped()
         self.ps_map.header.frame_id = 'map'
@@ -351,13 +244,28 @@ class Train_env:
         self.read_csv()
 
         # self.set_pos_and_ang()
-        # self.set_pos_and_ang()
+        # self.set_target_pos()
+        # self.clear_costmap()
 
     def loop(self):
-        self.tf_target2robot()
+        print(self.episode, self.step)
+        target = self.tf_target2robot()
+        # print(target, self.sub_cmd_vel)
         if not self.wait_scan:
             return
+        if self.collect_flag:
+            self.collect_dataset(target)
+            self.step += 1
         self.check_end()
+        
+
+    def cmd_vel_callback(self, msg):
+        self.sub_cmd_vel.linear = msg.linear
+        self.sub_cmd_vel.angular = msg.angular
+
+    def target_callback(self, msg):
+        # self.ps_map.pose = msg.pose
+        pass
 
     def result_callback(self, msg):
         self.is_goal_reached = True
@@ -370,6 +278,17 @@ class Train_env:
         self.scan.ranges = scan_ranges
         self.min_s = min(self.scan.ranges)
         self.wait_scan = True
+
+    def collect_dataset(self, target):
+        # dataset, episode, step, linear.x, angular.z, target_l, scan_data
+        line = ["dataset", str(self.episode), str(self.step), str(self.sub_cmd_vel.linear.x), str(self.sub_cmd_vel.angular.z), str(target)]
+        with open(self.save_path + '.csv', 'a') as f:
+            writer = csv.writer(f, lineterminator='\n')
+            writer.writerow(line)
+        
+        with open(self.save_scan_path + '.csv', 'a') as f:
+            writer = csv.writer(f, lineterminator='\n')
+            writer.writerow(self.scan.ranges)
 
     def tf_target2robot(self):
         try:
@@ -409,19 +328,23 @@ class Train_env:
 
     def check_end(self):
         flag = False
+        if self.target_l[0] < 0.5:
+            self.collect_flag = False
         if self.is_goal_reached:
+        # if self.target_l[0] < 0.4 or self.is_goal_reached:
             flag = True
+            self.cmd_pub.publish(self.cmd_vel)
         elif self.min_s < 0.12:
             flag = True
         
         if flag:
+            self.episode += 1
             self.is_goal_reached = False
-            rg.set_pos_and_ang()
+            self.set_pos_and_ang()
             # time.sleep(1)
-            rg.set_target_pos()
-
-
+            self.set_target_pos()
             self.clear_costmap()
+            self.collect_flag = True
             # set sequence~~~~~
 
     def set_target_pos(self):
@@ -510,9 +433,9 @@ class Train_env:
         ps_base = self.listener.transformPose('/odom', self.ps_estimate)
         model_state.pose = ps_base.pose
         # print(ps_base)
-        print(model_state)
+        # print(model_state)
 
-        print(self.ps_estimate.pose)
+        # print(self.ps_estimate.pose)
 
         # model_state.pose = state
         self.set_pos(model_state)
