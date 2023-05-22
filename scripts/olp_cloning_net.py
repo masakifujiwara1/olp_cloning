@@ -8,7 +8,6 @@ import os
 import time
 from os.path import expanduser
 
-
 import torch
 import torchvision
 import torch.nn as nn
@@ -22,16 +21,14 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from yaml import load
 
-
 # HYPER PARAM
 BATCH_SIZE = 8
 MAX_DATA = 100000
 
-
 class Net(nn.Module):
     def __init__(self, n_channel, n_out):
         super().__init__()
-    # Network CNN 3 + FC 2 + fc2
+    # network
         self.conv1 = nn.Conv1d(1, 64, kernel_size=7, stride=3)
         self.bn1 = nn.BatchNorm1d(64)
         self.conv2 = nn.Conv1d(64, 64, kernel_size=3, stride=1)
@@ -47,11 +44,13 @@ class Net(nn.Module):
         self.avg_pool = nn.AvgPool1d(3)
         self.max_pool = nn.MaxPool1d(3)
 
-        self.fc1 = nn.Linear(1024, 1024)
+        # 7630 + 3
+        self.fc1 = nn.Linear(7363, 1024)
         self.fc2 = nn.Linear(1024, 512)
         self.fc3 = nn.Linear(512, 2)
 
         self.relu = nn.ReLU(inplace=True)
+
     # Weight set
         torch.nn.init.kaiming_normal_(self.conv1.weight)
         torch.nn.init.kaiming_normal_(self.conv2.weight)
@@ -64,39 +63,37 @@ class Net(nn.Module):
         torch.nn.init.kaiming_normal_(self.fc7.weight)
         
         self.flatten = nn.Flatten()
-    # CNN layer
-        self.cnn_layer = nn.Sequential(
-            self.conv1,
-            self.relu,
-            self.conv2,
-            self.relu,
-            self.conv3,
-            self.relu,
-            # self.maxpool,
-            self.flatten
-        )
-    # FC layer
-        self.fc_layer = nn.Sequential(
-            self.fc4,
-            self.relu,
-            self.fc5,
-            self.relu
-        )
-    # Concat layer (CNN output + Cmd data)
-        self.concat_layer = nn.Sequential(
-            self.fc6,
-            self.relu,
-            self.fc7
-        )
-    # forward layer
 
-    def forward(self, x, c):
-        x1 = self.cnn_layer(x)
-        x2 = self.fc_layer(x1)
-        x3 = torch.cat([x2, c], dim=1)
-        x4 = self.concat_layer(x3)
-        return x4
+    def forward(self, x, target):
+        # CNN
+        x1 = self.relu(self.bn1(self.conv1(x)))
+        x2 = self.max_pool(x1)
 
+        # x2 >> shorcut
+        x3 = self.relu(self.bn2(self.conv2(x2)))
+        x4 = self.bn3(self.conv3(x3))
+
+        # x4 >> shortcut
+        
+        # shorcut x2
+        x5 = torch.cat([x4, x2], dim=2)
+        x6 = self.relu(x5)
+        x7 = self.relu(self.bn4(self.conv4(x6)))
+        x8 = self.bn5(self.conv5(x7))
+
+        # shorcut x4
+        x9 = torch.cat([x8, x4], dim=2)
+        x10 = self.relu(x9)
+        x11 = self.avg_pool(x10)
+        x12 = self.flatten(x11)
+
+        # FC
+        x13 = torch.cat([x12, target], dim=1)
+        x14 = self.relu(self.fc1(x13))
+        x15 = self.relu(self.fc2(x14))
+        x16 = self.relu(self.fc3(x15))
+
+        return x16
 
 class deep_learning:
     def __init__(self, n_channel=3, n_action=1):
