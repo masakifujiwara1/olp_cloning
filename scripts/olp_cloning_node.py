@@ -248,6 +248,9 @@ class Train_env:
         # self.clear_costmap()
 
     def loop(self):
+        if self.episode == EPISODE + 1:
+            os.system('killall roslaunch')
+            sys.exit()
         print(self.episode, self.step)
         target = self.tf_target2robot()
         # print(target, self.sub_cmd_vel)
