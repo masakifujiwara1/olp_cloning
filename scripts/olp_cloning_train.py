@@ -4,9 +4,15 @@ import roslib
 import numpy as np
 
 def main():
-    csv_path = roslib.packages.get_pkg_dir('olp_cloning') + '/dataset/20230523_01:00:22/dataset_100_scan.csv'
-    # df = pd.read_csv(csv_path, header=None)
+    csv_path = roslib.packages.get_pkg_dir('olp_cloning') + '/dataset/20230522_19:53:13/dataset_100_scan.csv'
+    csv_path_data = roslib.packages.get_pkg_dir('olp_cloning') + '/dataset/20230522_19:53:13/dataset_100.csv'
+    df_data = pd.read_csv(csv_path_data, header=None)
     
+
+    action = df_data.iloc[:, [3, 4]]
+    print(action)
+
+
     df = np.loadtxt(csv_path, delimiter=',', dtype='float64')
 
     # print(len(df))
