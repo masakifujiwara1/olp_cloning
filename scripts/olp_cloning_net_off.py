@@ -221,8 +221,9 @@ class deep_learning:
                     loss1 = self.criterion(y_train[0], action_train[0])
                     loss2 = self.criterion(y_train[1], action_train[1])
 
-                    # loss = 0.2 * loss1 + 0.8 * loss2
-                    loss = loss1 + loss2
+                    loss_ratio = 0.3
+                    loss = loss_ratio * loss1 + (1 - loss_ratio) * loss2
+                    # loss = loss1 + loss2
 
                     loss.backward()
                     self.optimizer.step()
