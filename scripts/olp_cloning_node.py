@@ -13,13 +13,14 @@ from gazebo_msgs.srv import GetModelState, SetModelState
 from gazebo_msgs.msg import ModelState
 from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped, PoseArray, Twist, Pose
 from sensor_msgs.msg import LaserScan
-from std_srvs.srv import Empty
+from std_srvs.srv import Empty, Trigger
 from nav_msgs.msg import Odometry
 from move_base_msgs.msg import MoveBaseActionResult
 
 # from torch.utils.tensorboard import SummaryWriter
 
-# from olp_cloning_net_without_action_scale import *
+from olp_cloning_net_off import *
+
 import rospy
 import roslib
 roslib.load_manifest('olp_cloning')
@@ -27,168 +28,11 @@ roslib.load_manifest('olp_cloning')
 MODEL_NAME = 'turtlebot3_burger'
 
 EPISODE = 100
+TEST = True
 
 # to do random target position 
 # X = 1.5
 # Y = 1.5
-
-class olp_cloning_node:
-    def __init__(self):
-        rospy.init_node('olp_cloning_node', anonymous=True)
-        self.target_pos_sub = rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.target_callback)
-        self.target_pos_pub = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=1)
-        self.ps_map = PoseStamped()
-        self.ps_map.header.frame_id = 'map'
-        self.scan_sub = rospy.Subscriber('/scan', LaserScan, self.scan_callback)
-        self.scan = LaserScan()
-        self.listener = tf.TransformListener()
-        self.wait_scan = False
-        self.min_s = 0
-        self.target_l = 0
-
-        # self.writer = SummaryWriter(log_dir='/home/fmasa/catkin_ws/src/olp_cloning/runs')
-
-        self.gazebo_env = Gazebo_env()
-
-        self.end_steps_flag = False
-        self.eval_flag = False
-
-        self.i_episode = 1
-        self.eval_count = 0
-        self.train = Trains(self.args, self.reward_args)
-        self.make_state = MakeState()
-
-        self.gazebo_env.reset_env()
-        self.gazebo_env.reset_env()
-
-        self.hand_set_target(X, Y)
-        # print(self.ps_map)
-        time.sleep(2)
-
-    def target_callback(self, msg):
-        self.ps_map.pose = msg.pose
-
-    def scan_callback(self, msg):
-        self.scan.ranges = msg.ranges
-        scan_ranges = np.array(self.scan.ranges)
-        scan_ranges[np.isinf(scan_ranges)] = msg.range_max
-        # print(len(scan_ranges))
-        self.scan.ranges = scan_ranges
-        self.min_s = min(self.scan.ranges)
-        self.wait_scan = True
-
-    def hand_set_target(self, x, y):
-        self.ps_map.pose.position.x = x
-        self.ps_map.pose.position.y = y
-    
-    def tf_target2robot(self):
-        try:
-            (trans, rot) = self.listener.lookupTransform('/odom', '/base_footprint', rospy.Time(0))
-        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-            return
-
-        ps_base = self.listener.transformPose('/odom', self.ps_map)
-
-        dx = ps_base.pose.position.x - trans[0]
-        dy = ps_base.pose.position.y - trans[1]
-        dist = math.sqrt(dx*dx + dy*dy)
-
-        angle = math.atan2(dy, dx)
-        quat = tf.transformations.quaternion_from_euler(0, 0, angle)
-        (_, _, yaw) = tf.transformations.euler_from_quaternion(quat)
-        angle_diff = yaw - tf.transformations.euler_from_quaternion(rot)[2]
-        robot_angle = tf.transformations.euler_from_quaternion(rot)[2]
-
-        # print('Distance: %.2f m' % dist)
-        # print('Angle: %.2f rad' % angle_diff)
-
-        # print(robot_angle)
-
-        self.target_l = [dist, angle_diff, robot_angle]
-        self.target_l = np.array(self.target_l)
-
-        return self.target_l
-
-    def next_episode(self):
-        # twist reset
-        self.train.action_twist.linear.x = 0
-        self.train.action_twist.angular.z = 0
-        self.train.action_pub.publish(self.train.action_twist)
-        # target set
-        self.hand_set_target(X, Y)
-        # gazebo reset
-        self.gazebo_env.reset_and_set()
-        time.sleep(1)
-    
-    def loop(self):
-        if not self.wait_scan:
-            return
-        self.target_pos_pub.publish(self.ps_map)
-        target_l = self.tf_target2robot()
-        state = self.make_state.toState(np.array(list(self.scan.ranges)), target_l)
-
-        # #check steps
-        # self.end_steps_flag = self.train.check_steps(target_l, self.min_s)
-
-        if self.i_episode == self.args['epochs'] + 1:
-            # loop end
-            pass
-
-        if not self.eval_flag:
-            if self.end_steps_flag:
-
-                episode_avg_reward = self.train.episode_reward / self.train.n_steps
-                print(episode_avg_reward, self.i_episode)
-                # self.writer.add_scalar("episode per reward", episode_avg_reward, self.i_episode)
-
-                self.train.episode_reward_list.append(self.train.episode_reward)
-                if self.i_episode % self.args['eval_interval'] == 0:
-                    self.eval_flag = True
-                    self.eval_count = 0
-                
-                # env reset
-                # self.gazebo_env.reset_and_set()
-                self.next_episode()
-                self.train.n_steps = 0
-                self.train.episode_reward = 0
-                self.train.reward = 0
-                self.i_episode += 1
-                self.train.init = True
-
-                self.end_steps_flag = False
-            else:
-                self.train.while_func(state, target_l, self.min_s)
-                self.writer.add_scalar("reward", self.train.reward, self.train.total_n_steps)
-                print("Train mode,  Episode: {}, Total step: {}, Step: {}, Step reward: {:.2f}, target_d: {:.2f}, target_r: {:.2f}, robot_ang: {:.2f}".format(self.i_episode, self.train.total_n_steps, self.train.n_steps, self.train.reward, self.target_l[0], self.target_l[1], self.target_l[2]))
-        else:
-            if self.eval_count == self.args['eval_interval']:
-                self.eval_flag = False
-                print("Episode: {}, Eval Avg. Reward: {:.0f}".format(self.i_episode, self.train.avg_reward))
-            else:
-                if self.end_steps_flag:
-                    self.train.avg_reward /= self.args['eval_interval']
-                    self.train.eval_reward_list.append(self.train.avg_reward)
-
-                    # print("Episode: {}, Eval Avg. Reward: {:.0f}".format(self.i_episode, self.train.avg_reward))
-
-                    # env reset
-                    # self.gazebo_env.reset_and_set()
-                    self.next_episode()
-                    self.eval_count += 1
-                    self.train.n_steps = 0
-                    self.train.episode_reward = 0
-                    self.train.reward = 0
-                    self.train.init = True
-
-                    self.end_steps_flag = False
-                else:
-                    # eval func
-                    self.train.evaluate_func(state, target_l, self.min_s)
-                    print("Evaluate mode Episode: {}, Step: {}, Step reward: {:.0f}".format(self.i_episode, self.train.n_steps, self.train.episode_reward))
-
-        # print("Episode: {}, Step: {}, Step reward: {:.0f}".format(self.i_episode, self.train.n_steps, self.train.episode_reward))
-        #check steps
-        self.end_steps_flag = self.train.check_steps(target_l, self.min_s)
 
 class Train_env:
     def __init__(self):
@@ -199,10 +43,13 @@ class Train_env:
         self.save_scan_path = roslib.packages.get_pkg_dir('olp_cloning') + '/dataset/' + self.start_time + '/dataset_' + str(EPISODE) + '_scan'
         os.makedirs(self.path + self.start_time)
 
+        self.load_path = roslib.packages.get_pkg_dir('olp_cloning') + '/data/20230524_12:41:24/model_gpu.pt'
+
         self.reset_world = rospy.ServiceProxy('/gazebo/reset_world', Empty)
         self.clear_costmap = rospy.ServiceProxy('/move_base/clear_costmaps', Empty)
         self.set_pos = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
         self.get_pos = rospy.ServiceProxy('/gazebo/get_model_state', GetModelState)
+        self.start_wp = rospy.Service('/start_wp_nav', Trigger, self.start_wp_callback)
         self.target_pos_pub = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=10)
         self.target_pos_sub = rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.target_callback)
         self.scan_sub = rospy.Subscriber('/scan', LaserScan, self.scan_callback)
@@ -210,6 +57,8 @@ class Train_env:
         self.cmd_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
         self.cmd_sub = rospy.Subscriber('/cmd_vel', Twist, self.cmd_vel_callback)
         self.result_sub = rospy.Subscriber('/move_base/result', MoveBaseActionResult, self.result_callback)
+
+        self.dl = deep_learning()
         
         self.episode = 1
         self.step = 1
@@ -243,39 +92,56 @@ class Train_env:
 
         self.read_csv()
 
-        # self.set_pos_and_ang()
-        # self.set_target_pos()
-        # self.clear_costmap()
+        self.sub_target = False
+        self.start_flag = False
+
+        if TEST:
+            self.dl.load(self.load_path)
 
     def loop(self):
-        if self.episode == EPISODE + 1:
-            os.system('killall roslaunch')
-            sys.exit()
-        print(self.episode, self.step)
-        target = self.tf_target2robot()
-        # print(target, self.sub_cmd_vel)
-        if not self.wait_scan:
-            return
-        if self.collect_flag:
-            self.collect_dataset(target)
-            self.step += 1
-        self.check_end()
-        
+        if not TEST:
+            if self.episode == EPISODE + 1:
+                os.system('killall roslaunch')
+                sys.exit()
+            print(self.episode, self.step)
+            target = self.tf_target2robot()
+            # print(target, self.sub_cmd_vel)
+            if not self.wait_scan:
+                return
+            if self.collect_flag:
+                self.collect_dataset(target)
+                self.step += 1
+            self.check_end()
+        else:
+            if not self.wait_scan:
+                return
+            if not self.sub_target:
+                return
+            if not self.start_flag:
+                return
+            target = self.tf_target2robot()
+            v, w = self.dl.act(self.scan.ranges, target)
+            self.cmd_vel.linear.x = v
+            self.cmd_vel.angular.z = w
+            self.cmd_pub.publish(self.cmd_vel)
+
+    def start_wp_callback(self, msg):
+        self.start_flag = True
 
     def cmd_vel_callback(self, msg):
         self.sub_cmd_vel.linear = msg.linear
         self.sub_cmd_vel.angular = msg.angular
 
     def target_callback(self, msg):
-        # self.ps_map.pose = msg.pose
-        pass
+        if TEST:
+            self.ps_map.pose = msg.pose
+            self.sub_target = True
 
     def result_callback(self, msg):
         self.is_goal_reached = True
 
     def scan_callback(self, msg):
-        self.scan.ranges = msg.ranges
-        scan_ranges = np.array(self.scan.ranges)
+        scan_ranges = np.array(msg.ranges)
         scan_ranges[np.isinf(scan_ranges)] = msg.range_max
         # print(len(scan_ranges))
         self.scan.ranges = scan_ranges

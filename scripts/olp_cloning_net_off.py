@@ -66,16 +66,16 @@ class MyDataset(Dataset):
         scan_data = self.scan_list[index]
 
         # target = np.array(target)
-        print(target, type(target))
+       
+        target = target.strip('[]')
+        target = target.split()
+        target = [float(element) for element in target]
+        target = np.array(target)
+        # print(target, type(target))
 
-        scan_data = torch.tensor(scan_data, dtype=torch.float32, device=self.device)
+        scan_data = torch.tensor(scan_data, dtype=torch.float32, device=self.device).unsqueeze(0)
         target = torch.tensor(target, dtype=torch.float32, device=self.device)
         action = torch.tensor([float(action_v), float(action_w)], dtype=torch.float32, device=self.device)
-        # action_w = torch.tensor([], dtype=torch.float32, device=self.device)
-
-        # print(cmd, target, number)
-
-        # print(index, data)
 
         return scan_data, target, action
 
@@ -149,7 +149,7 @@ class Net(nn.Module):
         x13 = torch.cat([x12, target], dim=1)
         x14 = self.relu(self.fc1(x13))
         x15 = self.relu(self.fc2(x14))
-        x16 = self.relu(self.fc3(x15))
+        x16 = self.fc3(x15)
 
         return x16
 
@@ -212,10 +212,17 @@ class deep_learning:
                 for scan_train, target_train, action_train in train_dataset:
                     self.net.train()
 
+                    # print(scan_train.shape, target_train.shape, action_train.shape)
+
                     self.optimizer.zero_grad()
 
                     y_train = self.net(scan_train, target_train)
-                    loss = self.criterion(y_train, action_train)
+                    # loss = self.criterion(y_train, action_train)
+                    loss1 = self.criterion(y_train[0], action_train[0])
+                    loss2 = self.criterion(y_train[1], action_train[1])
+
+                    # loss = 0.2 * loss1 + 0.8 * loss2
+                    loss = loss1 + loss2
 
                     loss.backward()
                     self.optimizer.step()
@@ -223,7 +230,7 @@ class deep_learning:
                     # print(self.count)
                     self.count += 1
 
-                    total += x_train.size(0)
+                    total += scan_train.size(0)
                     loss_sum += loss.item()
                     running_loss = loss_sum/total
 
@@ -236,21 +243,20 @@ class deep_learning:
 
         return True
 
-    def act(self, img, dir_cmd):
+    def act(self, scan_data, target):
         self.net.eval()
         # <make img(x_test_ten),cmd(c_test)>
-        # x_test_ten = torch.tensor(self.transform(img),dtype=torch.float32, device=self.device).unsqueeze(0)
-        x_test_ten = torch.tensor(
-            img, dtype=torch.float32, device=self.device).unsqueeze(0)
-        x_test_ten = x_test_ten.permute(0, 3, 1, 2)
-        c_test = torch.tensor(dir_cmd, dtype=torch.float32,
-                              device=self.device).unsqueeze(0)
+        scan_test = torch.tensor(scan_data, dtype=torch.float32, device=self.device).unsqueeze(0).unsqueeze(0)
+        # print(scan_test.shape)
+        target_test = np.array(target)
+        target_test = torch.tensor(target, dtype=torch.float32, device=self.device).unsqueeze(0)
         # print(x_test_ten.shape,x_test_ten.device,c_test.shape,c_test.device)
         # <test phase>
-        action_value_test = self.net(x_test_ten, c_test)
+        action_value_test = self.net(scan_test, target_test)
 
+        print(action_value_test)
         #print("act = " ,action_value_test.item())
-        return action_value_test[0][0].item()
+        return action_value_test[0][0].item(), action_value_test[0][1].item()
 
     def result(self):
         accuracy = self.accuracy
