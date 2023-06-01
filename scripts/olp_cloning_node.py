@@ -26,8 +26,10 @@ import roslib
 roslib.load_manifest('olp_cloning')
 
 MODEL_NAME = 'turtlebot3_burger'
+# WORLD_NAME = 'train'
+WORLD_NAME = 'eval2'
 
-EPISODE = 100
+EPISODE = 400
 TEST = True
 
 # to do random target position 
@@ -43,7 +45,7 @@ class Train_env:
         self.save_scan_path = roslib.packages.get_pkg_dir('olp_cloning') + '/dataset/' + self.start_time + '/dataset_' + str(EPISODE) + '_scan'
         os.makedirs(self.path + self.start_time)
 
-        self.load_path = roslib.packages.get_pkg_dir('olp_cloning') + '/data/20230524_12:41:24/model_gpu.pt'
+        self.load_path = roslib.packages.get_pkg_dir('olp_cloning') + '/data/20230601_18:26:19_600train_400eval2_0.1ratio_200ep_512ba/model_gpu.pt'
 
         self.reset_world = rospy.ServiceProxy('/gazebo/reset_world', Empty)
         self.clear_costmap = rospy.ServiceProxy('/move_base/clear_costmaps', Empty)
@@ -55,6 +57,7 @@ class Train_env:
         self.scan_sub = rospy.Subscriber('/scan', LaserScan, self.scan_callback)
         self.initial_pos = rospy.Publisher('/initialpose', PoseWithCovarianceStamped, queue_size=10)
         self.cmd_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
+        # self.particle_pub = rospy.Publisher('/particlecloud', PoseArray, queue_size=10)
         self.cmd_sub = rospy.Subscriber('/cmd_vel', Twist, self.cmd_vel_callback)
         self.result_sub = rospy.Subscriber('/move_base/result', MoveBaseActionResult, self.result_callback)
 
@@ -68,7 +71,7 @@ class Train_env:
         self.collect_flag = True
 
         self.pos_candidate = []
-        self.read_path = '/home/fmasa/catkin_ws/src/olp_cloning/config/set_pose.csv'
+        self.read_path = '/home/fmasa/catkin_ws/src/olp_cloning/config/set_pose_' + WORLD_NAME + '.csv'
 
         self.cmd_vel = Twist()
         self.cmd_vel.linear.x = 0.0
@@ -84,6 +87,9 @@ class Train_env:
 
         self.init_pos = PoseWithCovarianceStamped()
         self.init_pos.header.frame_id = 'map'
+
+        self.particle = PoseArray()
+        self.particle.header.frame_id = 'map'
 
         self.scan = LaserScan()
         self.min_s = 0
@@ -120,6 +126,7 @@ class Train_env:
             if not self.start_flag:
                 return
             target = self.tf_target2robot()
+            print(target)
             v, w = self.dl.act(self.scan.ranges, target)
             self.cmd_vel.linear.x = v
             self.cmd_vel.angular.z = w
@@ -172,9 +179,14 @@ class Train_env:
         dist = math.sqrt(dx*dx + dy*dy)
 
         angle = math.atan2(dy, dx)
-        quat = tf.transformations.quaternion_from_euler(0, 0, angle)
-        (_, _, yaw) = tf.transformations.euler_from_quaternion(quat)
-        angle_diff = yaw - tf.transformations.euler_from_quaternion(rot)[2]
+        # quat = tf.transformations.quaternion_from_euler(0, 0, angle)
+        # (_, _, yaw) = tf.transformations.euler_from_quaternion(quat)
+        # angle_diff = yaw - tf.transformations.euler_from_quaternion(rot)[2]
+        angle_diff = angle - tf.transformations.euler_from_quaternion(rot)[2]
+
+        if angle_diff < 0:
+            angle_diff = abs(angle_diff) + 3.1415
+
         robot_angle = tf.transformations.euler_from_quaternion(rot)[2]
 
         # print('Distance: %.2f m' % dist)
@@ -192,8 +204,10 @@ class Train_env:
         # self.init_pos.pose.pose.position.y = y
         # self.init_pos.pose.pose.orientation.z = theta
         self.init_pos.pose.pose = state
-        self.init_pos.pose.covariance = [0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.06853892326654787]
+        # self.particle.poses.append(state)
+        self.init_pos.pose.covariance = [0.001, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.001, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.001]
         self.initial_pos.publish(self.init_pos)
+        # self.particle_pub.publish(self.particle)
 
     def check_end(self):
         flag = False

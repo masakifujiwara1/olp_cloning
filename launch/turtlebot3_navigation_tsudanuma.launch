@@ -1,0 +1,48 @@
+<launch>
+  <!-- Arguments -->
+  <arg name="model" default="burger" doc="model type [burger, waffle, waffle_pi]"/>
+  <!-- <arg name="map_file" default="$(find olp_cloning)/map/willowgarage"/> -->
+  <!-- <arg name="map_file" default="$(find olp_cloning)/map/eval2"/> -->
+  <arg name="map_file" default="$(find olp_cloning)/map/cit_3f_map"/>
+  <!-- <arg name="map_file" default="$(find olp_cloning)/map/train"/> -->
+  <arg name="open_rviz" default="true"/>
+  <arg name="move_forward_only" default="false"/>
+
+  <!-- Turtlebot3 -->
+  <include file="$(find turtlebot3_bringup)/launch/turtlebot3_remote.launch">
+    <arg name="model" value="$(arg model)" />
+  </include>
+
+  <!-- Map server -->
+  <node pkg="map_server" name="map_server" type="map_server" args="$(arg map_file).yaml"/>
+
+  <node name="map_server_for_costmap" pkg="map_server" type="map_server" args="$(arg map_file)_for_costmap.yaml">
+    <remap from="/map" to="/map_for_costmap"/>
+    <param name="frame_id" value="map_for_costmap"/>
+  </node>
+
+  <!-- AMCL -->
+  <include file="$(find olp_cloning)/launch/amcl.launch"/>
+
+  <!-- <include file="$(find emcl2)/launch/emcl2.launch">
+      <arg name="scan_topic"     default="scan"/>
+      <arg name="initial_pose_y" default="-0.5"/> 
+      <arg name="initial_pose_x" default="-2.02"/>
+      <arg name="initial_pose_y" default="-0.124"/>
+      <arg name="initial_pose_a" default="0.0"/>
+  </include> -->
+
+  <!-- move_base -->
+  <include file="$(find olp_cloning)/launch/move_base.launch">
+    <arg name="model" value="$(arg model)" />
+    <arg name="cmd_vel_topic" value="/nav_vel" />
+    <!-- <arg name="cmd_vel_topic" value="/cmd_vel" /> -->
+    <arg name="move_forward_only" value="$(arg move_forward_only)"/>
+  </include>
+
+  <!-- rviz -->
+  <group if="$(arg open_rviz)"> 
+    <node pkg="rviz" type="rviz" name="rviz" required="true"
+          args="-d $(find turtlebot3_navigation)/rviz/turtlebot3_navigation.rviz"/>
+  </group>
+</launch>

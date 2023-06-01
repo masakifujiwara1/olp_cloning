@@ -26,21 +26,14 @@ from yaml import load
 from tqdm import tqdm
 
 # HYPER PARAM
-BATCH_SIZE = 16
-# MAX_DATA = 100000
-DATASET_PATH = roslib.packages.get_pkg_dir('olp_cloning') + '/dataset/20230522_19:53:13'
-# DATASET_PATH = '/home/fmasa/catkin_ws/src/create_dataset/dataset/real_environment_4hz'
+BATCH_SIZE = 512
+
+DATASET_NAME = '100train_100eval2'
+# DATASET_NAME = '600train_400eval2'
+DATASET_PATH = roslib.packages.get_pkg_dir('olp_cloning') + '/dataset/' + DATASET_NAME
 
 TOTAL_EPOCH = 100
-
-class MyTransforms:
-    def __init__(self) -> None:
-        pass
-
-    def __call__(self, x: torch.Tensor) -> torch.Tensor:
-        # x = torch.from_numpy(x.astype(np.float32))
-        # transforms.AugMix()
-        return x
+LOSS_RATIO = 0.1 # this param is weight of velocity
 
 class MyDataset(Dataset):
     def __init__(self, csv_path, transforms, device) -> None:
@@ -55,7 +48,6 @@ class MyDataset(Dataset):
         self.target_list = df.iloc[:, 5]
         self.scan_list = df_scan
 
-    # ここで取り出すデータを指定している
     def __getitem__(
         self,
         index: int
@@ -70,16 +62,22 @@ class MyDataset(Dataset):
         target = target.strip('[]')
         target = target.split()
         target = [float(element) for element in target]
+
+        if target[1] < 0:
+            print(target[1])
+            target[1] = float(abs(target[1]) + 3.1415)
+            print(target[1])
+
         target = np.array(target)
         # print(target, type(target))
 
         scan_data = torch.tensor(scan_data, dtype=torch.float32, device=self.device).unsqueeze(0)
-        target = torch.tensor(target, dtype=torch.float32, device=self.device)
+        # target = torch.tensor(target, dtype=torch.float32, device=self.device)
+        target = torch.tensor([target[0], target[1]], dtype=torch.float32, device=self.device)
         action = torch.tensor([float(action_v), float(action_w)], dtype=torch.float32, device=self.device)
 
         return scan_data, target, action
 
-    # この method がないと DataLoader を呼び出す際にエラーを吐かれる
     def __len__(self) -> int:
         return len(self.action_v_list)
 
@@ -89,21 +87,21 @@ class Net(nn.Module):
     # network
         self.conv1 = nn.Conv1d(1, 64, kernel_size=7, stride=3)
         self.bn1 = nn.BatchNorm1d(64)
-        self.conv2 = nn.Conv1d(64, 64, kernel_size=3, stride=1)
+        self.conv2 = nn.Conv1d(64, 64, kernel_size=3, stride=1, padding='same')
         self.bn2 = nn.BatchNorm1d(64)
-        self.conv3 = nn.Conv1d(64, 64, kernel_size=3, stride=1)
+        self.conv3 = nn.Conv1d(64, 64, kernel_size=3, stride=1, padding='same')
         self.bn3 = nn.BatchNorm1d(64)
 
-        self.conv4 = nn.Conv1d(64, 64, kernel_size=3, stride=1)
+        self.conv4 = nn.Conv1d(64, 64, kernel_size=3, stride=1, padding='same')
         self.bn4 = nn.BatchNorm1d(64)
-        self.conv5 = nn.Conv1d(64, 64, kernel_size=3, stride=1)
+        self.conv5 = nn.Conv1d(64, 64, kernel_size=3, stride=1, padding='same')
         self.bn5 = nn.BatchNorm1d(64)
 
         self.avg_pool = nn.AvgPool1d(3)
         self.max_pool = nn.MaxPool1d(3)
 
-        # 7630 + 3
-        self.fc1 = nn.Linear(7363, 1024)
+        # 2496 + 3
+        self.fc1 = nn.Linear(2498, 1024)
         self.fc2 = nn.Linear(1024, 512)
         self.fc3 = nn.Linear(512, 2)
 
@@ -124,6 +122,7 @@ class Net(nn.Module):
 
     def forward(self, x, target):
         # CNN
+        # print(x.shape)
         x1 = self.relu(self.bn1(self.conv1(x)))
         x2 = self.max_pool(x1)
 
@@ -134,18 +133,21 @@ class Net(nn.Module):
         # x4 >> shortcut
         
         # shorcut x2
-        x5 = torch.cat([x4, x2], dim=2)
+        # x5 = torch.cat([x4, x2], dim=2)
+        x5 = x4 + x2
         x6 = self.relu(x5)
         x7 = self.relu(self.bn4(self.conv4(x6)))
         x8 = self.bn5(self.conv5(x7))
 
         # shorcut x4
-        x9 = torch.cat([x8, x4], dim=2)
+        x9 = x8 + x4
+        # x9 = torch.cat([x8, x4], dim=2)
         x10 = self.relu(x9)
         x11 = self.avg_pool(x10)
         x12 = self.flatten(x11)
 
         # FC
+        # print(x12.shape, target.shape)
         x13 = torch.cat([x12, target], dim=1)
         x14 = self.relu(self.fc1(x13))
         x15 = self.relu(self.fc2(x14))
@@ -176,8 +178,7 @@ class deep_learning:
         self.datas = []
         self.target_angles = []
         self.criterion = nn.MSELoss()
-        # self.transform = transforms.Compose([MyTransforms(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-        self.transform = transforms.Compose([MyTransforms(), transforms.AugMix()])
+        self.transform = transforms.Compose([transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
         self.first_flag = True
         self.save_path = roslib.packages.get_pkg_dir('olp_cloning') + '/data/'
         torch.backends.cudnn.benchmark = False
@@ -192,15 +193,16 @@ class deep_learning:
 
         # <Training mode>
         # self.net.train()
-        
 
         # <make dataset>
         csv_path = DATASET_PATH  
 
+        dataset = MyDataset(csv_path, transforms = self.transform, device = self.device)
+
         for epoch in range(1, TOTAL_EPOCH+1):
             # <dataloder>
             # train_dataset = DataLoader(dataset=dataset, batch_size=BATCH_SIZE, generator=torch.Generator('cpu').manual_seed(0), shuffle=True)
-            dataset = MyDataset(csv_path, transforms = self.transform, device = self.device)
+            # dataset = MyDataset(csv_path, transforms = self.transform, device = self.device)
             train_dataset = DataLoader(dataset=dataset, batch_size=BATCH_SIZE, generator=torch.Generator('cpu').manual_seed(0), shuffle=True)
 
             loss_sum = 0
@@ -217,13 +219,16 @@ class deep_learning:
                     self.optimizer.zero_grad()
 
                     y_train = self.net(scan_train, target_train)
-                    # loss = self.criterion(y_train, action_train)
-                    loss1 = self.criterion(y_train[0], action_train[0])
-                    loss2 = self.criterion(y_train[1], action_train[1])
+                    loss = self.criterion(y_train, action_train)
 
-                    loss_ratio = 0.3
-                    loss = loss_ratio * loss1 + (1 - loss_ratio) * loss2
+
                     # loss = loss1 + loss2
+                    # loss1 = self.criterion(y_train[0], action_train[0])
+                    # loss2 = self.criterion(y_train[1], action_train[1])
+
+                    # loss_ratio = LOSS_RATIO
+                    # loss = loss_ratio * loss1 + (1 - loss_ratio) * loss2
+                    
 
                     loss.backward()
                     self.optimizer.step()
@@ -255,7 +260,7 @@ class deep_learning:
         # <test phase>
         action_value_test = self.net(scan_test, target_test)
 
-        print(action_value_test)
+        # print(action_value_test)
         #print("act = " ,action_value_test.item())
         return action_value_test[0][0].item(), action_value_test[0][1].item()
 
@@ -265,7 +270,7 @@ class deep_learning:
 
     def save(self, save_path):
         # <model save>
-        path = save_path + time.strftime("%Y%m%d_%H:%M:%S")
+        path = save_path + time.strftime("%Y%m%d_%H:%M:%S") + '_' + str(DATASET_NAME) + '_' + str(LOSS_RATIO) + 'ratio_' + str(TOTAL_EPOCH) + 'ep' + '_' + str(BATCH_SIZE) + 'ba'
         os.makedirs(path)
         torch.save(self.net.state_dict(), path + '/model_gpu.pt')
         print("save_model")
