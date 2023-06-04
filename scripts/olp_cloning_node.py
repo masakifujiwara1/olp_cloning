@@ -45,7 +45,7 @@ class Train_env:
         self.save_scan_path = roslib.packages.get_pkg_dir('olp_cloning') + '/dataset/' + self.start_time + '/dataset_' + str(EPISODE) + '_scan'
         os.makedirs(self.path + self.start_time)
 
-        self.load_path = roslib.packages.get_pkg_dir('olp_cloning') + '/data/20230601_18:26:19_600train_400eval2_0.1ratio_200ep_512ba/model_gpu.pt'
+        self.load_path = roslib.packages.get_pkg_dir('olp_cloning') + '/data/20230604_19:09:45_600train_400eval2_fix_0.1ratio_100ep_512ba/model_gpu.pt'
 
         self.reset_world = rospy.ServiceProxy('/gazebo/reset_world', Empty)
         self.clear_costmap = rospy.ServiceProxy('/move_base/clear_costmaps', Empty)

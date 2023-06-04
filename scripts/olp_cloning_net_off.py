@@ -72,7 +72,7 @@ class MyDataset(Dataset):
         # TARGET ELEMENT
         # [0]: disatance [1]:cos [2]:sin
 
-        print(target, type(target))
+        # print(target, type(target))
 
         scan_data = torch.tensor(scan_data, dtype=torch.float32, device=self.device).unsqueeze(0)
         target = torch.tensor(target, dtype=torch.float32, device=self.device)
@@ -104,7 +104,7 @@ class Net(nn.Module):
         self.max_pool = nn.MaxPool1d(3)
 
         # 2496 + 3
-        self.fc1 = nn.Linear(2498, 1024)
+        self.fc1 = nn.Linear(2499, 1024)
         self.fc2 = nn.Linear(1024, 512)
         self.fc3 = nn.Linear(512, 2)
 
