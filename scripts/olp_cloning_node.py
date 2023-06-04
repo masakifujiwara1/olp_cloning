@@ -179,22 +179,27 @@ class Train_env:
         dist = math.sqrt(dx*dx + dy*dy)
 
         angle = math.atan2(dy, dx)
-        # quat = tf.transformations.quaternion_from_euler(0, 0, angle)
-        # (_, _, yaw) = tf.transformations.euler_from_quaternion(quat)
-        # angle_diff = yaw - tf.transformations.euler_from_quaternion(rot)[2]
-        angle_diff = angle - tf.transformations.euler_from_quaternion(rot)[2]
+
+        robot_ang = tf.transformations.euler_from_quaternion(rot)[2]
+
+        if angle < 0:
+            angle += math.pi * 2
+
+        if robot_ang < 0:
+            robot_ang += math.pi * 2
+
+        angle_diff = angle - robot_ang
 
         if angle_diff < 0:
-            angle_diff = abs(angle_diff) + 3.1415
+            angle_diff += math.pi * 2
 
-        robot_angle = tf.transformations.euler_from_quaternion(rot)[2]
+        if angle_diff > math.pi:
+            angle_diff -= math.pi * 2
 
-        # print('Distance: %.2f m' % dist)
-        # print('Angle: %.2f rad' % angle_diff)
+        t_cos = np.cos(angle_diff)
+        t_sin = np.sin(angle_diff)
 
-        # print(robot_angle)
-
-        self.target_l = [dist, angle_diff, robot_angle]
+        self.target_l = [dist, t_cos, t_sin]
         self.target_l = np.array(self.target_l)
 
         return self.target_l

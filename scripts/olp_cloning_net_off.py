@@ -28,8 +28,8 @@ from tqdm import tqdm
 # HYPER PARAM
 BATCH_SIZE = 512
 
-DATASET_NAME = '100train_100eval2'
-# DATASET_NAME = '600train_400eval2'
+# DATASET_NAME = '100train_100eval2'
+DATASET_NAME = '600train_400eval2_fix'
 DATASET_PATH = roslib.packages.get_pkg_dir('olp_cloning') + '/dataset/' + DATASET_NAME
 
 TOTAL_EPOCH = 100
@@ -63,17 +63,20 @@ class MyDataset(Dataset):
         target = target.split()
         target = [float(element) for element in target]
 
-        if target[1] < 0:
-            print(target[1])
-            target[1] = float(abs(target[1]) + 3.1415)
-            print(target[1])
-
+        t_cos = np.cos(target[1])
+        t_sin = np.sin(target[1])
+        target[1] = t_cos
+        target[2] = t_sin
         target = np.array(target)
-        # print(target, type(target))
+
+        # TARGET ELEMENT
+        # [0]: disatance [1]:cos [2]:sin
+
+        print(target, type(target))
 
         scan_data = torch.tensor(scan_data, dtype=torch.float32, device=self.device).unsqueeze(0)
-        # target = torch.tensor(target, dtype=torch.float32, device=self.device)
-        target = torch.tensor([target[0], target[1]], dtype=torch.float32, device=self.device)
+        target = torch.tensor(target, dtype=torch.float32, device=self.device)
+        # target = torch.tensor([target[0], target[1]], dtype=torch.float32, device=self.device)
         action = torch.tensor([float(action_v), float(action_w)], dtype=torch.float32, device=self.device)
 
         return scan_data, target, action

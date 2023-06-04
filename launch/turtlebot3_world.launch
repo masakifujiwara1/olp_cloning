@@ -6,8 +6,8 @@
 
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
     <!-- <arg name="world_name" value="$(find olp_cloning)/worlds/willow_garage.world"/> -->
-    <!-- <arg name="world_name" value="$(find olp_cloning)/worlds/eval2.world"/> -->
-    <arg name="world_name" value="$(find olp_cloning)/worlds/train.world"/>
+    <arg name="world_name" value="$(find olp_cloning)/worlds/eval2.world"/>
+    <!-- <arg name="world_name" value="$(find olp_cloning)/worlds/train.world"/> -->
     <arg name="paused" value="false"/>
     <arg name="use_sim_time" value="true"/>
     <arg name="gui" value="true"/>

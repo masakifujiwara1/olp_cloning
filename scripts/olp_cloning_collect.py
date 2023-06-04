@@ -26,10 +26,10 @@ import roslib
 roslib.load_manifest('olp_cloning')
 
 MODEL_NAME = 'turtlebot3_burger'
-WORLD_NAME = 'train'
-# WORLD_NAME = 'eval2'
+# WORLD_NAME = 'train'
+WORLD_NAME = 'eval2'
 
-EPISODE = 600
+EPISODE = 6
 TEST = False
 
 # to do random target position 

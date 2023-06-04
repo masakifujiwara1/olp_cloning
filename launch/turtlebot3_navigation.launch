@@ -2,9 +2,9 @@
   <!-- Arguments -->
   <arg name="model" default="burger" doc="model type [burger, waffle, waffle_pi]"/>
   <!-- <arg name="map_file" default="$(find olp_cloning)/map/willowgarage"/> -->
-  <!-- <arg name="map_file" default="$(find olp_cloning)/map/eval2"/> -->
+  <arg name="map_file" default="$(find olp_cloning)/map/eval2"/>
   <!-- <arg name="map_file" default="$(find olp_cloning)/map/cit_3f_map"/> -->
-  <arg name="map_file" default="$(find olp_cloning)/map/train"/>
+  <!-- <arg name="map_file" default="$(find olp_cloning)/map/train"/> -->
   <arg name="open_rviz" default="true"/>
   <arg name="move_forward_only" default="false"/>
 
